@@ -1,0 +1,184 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Robot Scene with Skybox and Floor</title>
+  <script src="https://cdn.jsdelivr.net/npm/gl-matrix@2.8.1/dist/gl-matrix-min.js"></script>
+  <script id="vShader" type="x-shader/x-vertex">
+    attribute vec4 aVertexPosition;
+    attribute vec2 aTextureCoord;
+    uniform mat4 uProjectionMatrix;
+    uniform mat4 uViewMatrix;
+    uniform mat4 uModelMatrix;
+    varying vec2 vTextureCoord;
+    void main() {
+      gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * aVertexPosition;
+      vTextureCoord = aTextureCoord;
+    }
+  </script>
+  <script id="fShader" type="x-shader/x-fragment">
+    precision mediump float;
+    varying vec2 vTextureCoord;
+    uniform sampler2D uSampler;
+    void main() {
+      gl_FragColor = texture2D(uSampler, vTextureCoord);
+    }
+  </script>
+</head>
+<body onload="main()">
+  <label>Απόσταση κάμερας: <input type="number" id="camOrthoDistance" value="30"></label>
+  <button onclick="startAnimation()">Έναρξη animation</button>
+  <button onclick="stopAnimation()">Παύση animation</button>
+  <canvas id="sceneCanvas" width="800" height="600"></canvas>
+  <script>
+    let canvas, gl, shaderProgram;
+    let vertexBuffer, texCoordBuffer;
+    let uProjectionMatrixPointer, uViewMatrixPointer, uModelMatrixPointer, uSamplerPointer;
+    let vertexPositionAttributePointer, textureCoordAttributePointer;
+    let animationAngle = 0, animationId = null;
+    let skyTexture, floorTexture;
+
+    const cubeVertices = new Float32Array([
+      // Bottom face (for floor)
+      -1, -1, -1,
+       1, -1, -1,
+       1,  1, -1,
+      -1,  1, -1,
+    ]);
+
+    const texCoords = new Float32Array([
+      0, 0,
+      1, 0,
+      1, 1,
+      0, 1
+    ]);
+
+    function loadTexture(url) {
+      const texture = gl.createTexture();
+      const image = new Image();
+      image.crossOrigin = "anonymous";
+      image.onload = function () {
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.generateMipmap(gl.TEXTURE_2D);
+      };
+      image.src = url;
+      return texture;
+    }
+
+    function createShader(type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        alert(gl.getShaderInfoLog(shader));
+        return null;
+      }
+      return shader;
+    }
+
+    function initShaders() {
+      const vs = createShader(gl.VERTEX_SHADER, document.getElementById("vShader").textContent);
+      const fs = createShader(gl.FRAGMENT_SHADER, document.getElementById("fShader").textContent);
+
+      shaderProgram = gl.createProgram();
+      gl.attachShader(shaderProgram, vs);
+      gl.attachShader(shaderProgram, fs);
+      gl.linkProgram(shaderProgram);
+      gl.useProgram(shaderProgram);
+
+      vertexPositionAttributePointer = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+      textureCoordAttributePointer = gl.getAttribLocation(shaderProgram, "aTextureCoord");
+      gl.enableVertexAttribArray(vertexPositionAttributePointer);
+      gl.enableVertexAttribArray(textureCoordAttributePointer);
+
+      uProjectionMatrixPointer = gl.getUniformLocation(shaderProgram, "uProjectionMatrix");
+      uViewMatrixPointer = gl.getUniformLocation(shaderProgram, "uViewMatrix");
+      uModelMatrixPointer = gl.getUniformLocation(shaderProgram, "uModelMatrix");
+      uSamplerPointer = gl.getUniformLocation(shaderProgram, "uSampler");
+    }
+
+    function initBuffers() {
+      vertexBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, cubeVertices, gl.STATIC_DRAW);
+
+      texCoordBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
+    }
+
+    function drawFlatQuad(scale, translate, texture) {
+      const modelMatrix = mat4.create();
+      mat4.translate(modelMatrix, modelMatrix, translate);
+      mat4.scale(modelMatrix, modelMatrix, scale);
+
+      const projectionMatrix = mat4.create();
+      mat4.perspective(projectionMatrix, 60 * Math.PI / 180, canvas.width / canvas.height, 0.1, 100);
+
+      const camDist = parseFloat(document.getElementById("camOrthoDistance").value) || 30;
+      const camX = camDist * Math.cos(animationAngle);
+      const camY = camDist * Math.sin(animationAngle);
+      const camZ = 25 + 10 * Math.sin(animationAngle / 2);
+
+      const viewMatrix = mat4.create();
+      mat4.lookAt(viewMatrix, [camX, camY, camZ], [0, 0, 18], [0, 0, 1]);
+
+      gl.uniformMatrix4fv(uProjectionMatrixPointer, false, projectionMatrix);
+      gl.uniformMatrix4fv(uViewMatrixPointer, false, viewMatrix);
+      gl.uniformMatrix4fv(uModelMatrixPointer, false, modelMatrix);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+      gl.vertexAttribPointer(vertexPositionAttributePointer, 3, gl.FLOAT, false, 0, 0);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+      gl.vertexAttribPointer(textureCoordAttributePointer, 2, gl.FLOAT, false, 0, 0);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.uniform1i(uSamplerPointer, 0);
+
+      gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
+    }
+
+    function drawScene() {
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.enable(gl.DEPTH_TEST);
+      drawFlatQuad([2000, 2000, 1], [0, 0, 0], skyTexture); // Skybox
+      drawFlatQuad([60, 60, 1], [0, 0, -2], floorTexture);  // Floor
+    }
+
+    function animate() {
+      animationAngle += 0.01;
+      drawScene();
+      animationId = requestAnimationFrame(animate);
+    }
+
+    function startAnimation() {
+      if (!animationId) animate();
+    }
+
+    function stopAnimation() {
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+      }
+    }
+
+    function main() {
+      canvas = document.getElementById("sceneCanvas");
+      gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+      if (!gl) return alert("WebGL not supported");
+      initShaders();
+      initBuffers();
+      skyTexture = loadTexture("sky.jpg");
+      floorTexture = loadTexture("floor.jpg");
+      gl.clearColor(0.1, 0.1, 0.1, 1);
+      drawScene();
+    }
+  </script>
+</body>
+</html>

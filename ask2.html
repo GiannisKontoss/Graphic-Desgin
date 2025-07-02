@@ -1,0 +1,192 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Robot Scene with Camera Animation</title>
+<script src="https://cdn.jsdelivr.net/npm/gl-matrix@2.8.1/dist/gl-matrix-min.js"></script>
+<script id="vShader" type="x-shader/x-vertex">
+attribute vec4 aVertexPosition;
+attribute vec4 aVertexColor;
+uniform mat4 uProjectionMatrix;
+uniform mat4 uViewMatrix;
+uniform mat4 uModelMatrix;
+varying vec4 vColor;
+void main() {
+  gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * aVertexPosition;
+  vColor = aVertexColor;
+}
+</script>
+<script id="fShader" type="x-shader/x-fragment">
+precision mediump float;
+varying vec4 vColor;
+void main() {
+  gl_FragColor = vColor;
+}
+</script>
+<script>
+var gl, canvas;
+var shadersProgram;
+var vertexPositionAttributePointer, vertexColorAttributePointer;
+var uProjectionMatrixPointer, uViewMatrixPointer, uModelMatrixPointer;
+var vertexBuffer, colorBuffer;
+var animationAngle = 0;
+var animationId = null;
+
+function createRenderingContext(inCanvas) {
+  let ctx = inCanvas.getContext("webgl") || inCanvas.getContext("experimental-webgl");
+  if (!ctx) alert("WebGL rendering context creation error.");
+  return ctx;
+}
+
+function createCompileShader(type, source) {
+  let shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    alert("Shader compilation error: " + gl.getShaderInfoLog(shader));
+    return null;
+  }
+  return shader;
+}
+
+function initShaders() {
+  let vs = createCompileShader(gl.VERTEX_SHADER, document.getElementById("vShader").textContent);
+  let fs = createCompileShader(gl.FRAGMENT_SHADER, document.getElementById("fShader").textContent);
+  shadersProgram = gl.createProgram();
+  gl.attachShader(shadersProgram, vs);
+  gl.attachShader(shadersProgram, fs);
+  gl.linkProgram(shadersProgram);
+  if (!gl.getProgramParameter(shadersProgram, gl.LINK_STATUS)) alert("Shader linking error");
+  gl.useProgram(shadersProgram);
+
+  vertexPositionAttributePointer = gl.getAttribLocation(shadersProgram, "aVertexPosition");
+  vertexColorAttributePointer = gl.getAttribLocation(shadersProgram, "aVertexColor");
+  gl.enableVertexAttribArray(vertexPositionAttributePointer);
+  gl.enableVertexAttribArray(vertexColorAttributePointer);
+
+  uProjectionMatrixPointer = gl.getUniformLocation(shadersProgram, "uProjectionMatrix");
+  uViewMatrixPointer = gl.getUniformLocation(shadersProgram, "uViewMatrix");
+  uModelMatrixPointer = gl.getUniformLocation(shadersProgram, "uModelMatrix");
+}
+
+function initBuffers() {
+  let size = 0.5;
+  let cubeVertices = new Float32Array([
+    -size,-size, size,1, size,-size, size,1, size, size, size,1,
+    -size,-size, size,1, size, size, size,1, -size, size, size,1,
+    -size,-size,-size,1, -size, size,-size,1, size, size,-size,1,
+    -size,-size,-size,1, size, size,-size,1, size,-size,-size,1,
+    -size, size,-size,1, -size, size, size,1, size, size, size,1,
+    -size, size,-size,1, size, size, size,1, size, size,-size,1,
+    -size,-size,-size,1, size,-size,-size,1, size,-size, size,1,
+    -size,-size,-size,1, size,-size, size,1, -size,-size, size,1,
+    size,-size,-size,1, size, size,-size,1, size, size, size,1,
+    size,-size,-size,1, size, size, size,1, size,-size, size,1,
+    -size,-size,-size,1, -size,-size, size,1, -size, size, size,1,
+    -size,-size,-size,1, -size, size, size,1, -size, size,-size,1
+  ]);
+
+  let colors = new Float32Array(Array(6 * 6).fill([1, 0, 0, 1]).flat());
+
+  vertexBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, cubeVertices, gl.STATIC_DRAW);
+  vertexBuffer.itemSize = 4;
+  vertexBuffer.itemCount = cubeVertices.length / 4;
+
+  colorBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
+  colorBuffer.itemSize = 4;
+  colorBuffer.itemCount = colors.length / 4;
+}
+
+function setMatrixUniforms(modelMatrix) {
+  let projectionMatrix = mat4.create();
+  mat4.perspective(projectionMatrix, 60 * Math.PI / 180, canvas.width / canvas.height, 0.001, 100);
+
+  let camDistance = parseFloat(document.getElementById("camOrthoDistance").value) || 30;
+  let camX = camDistance * Math.cos(animationAngle);
+  let camY = camDistance * Math.sin(animationAngle);
+  let camZ = 25 + 10 * Math.sin(animationAngle / 2);
+
+  let viewMatrix = mat4.create();
+  mat4.lookAt(viewMatrix, [camX, camY, camZ], [0, 0, 18], [0, 0, 1]);
+
+  gl.uniformMatrix4fv(uProjectionMatrixPointer, false, projectionMatrix);
+  gl.uniformMatrix4fv(uViewMatrixPointer, false, viewMatrix);
+  gl.uniformMatrix4fv(uModelMatrixPointer, false, modelMatrix);
+}
+
+function drawCube(scale, translate, color) {
+  let modelMatrix = mat4.create();
+  mat4.translate(modelMatrix, modelMatrix, translate);
+  mat4.scale(modelMatrix, modelMatrix, scale);
+  setMatrixUniforms(modelMatrix);
+
+  let sideColor = new Float32Array(Array(6 * 6).fill(color).flat());
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+  gl.vertexAttribPointer(vertexPositionAttributePointer, vertexBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, sideColor, gl.STATIC_DRAW);
+  gl.vertexAttribPointer(vertexColorAttributePointer, colorBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+  gl.drawArrays(gl.TRIANGLES, 0, vertexBuffer.itemCount);
+}
+
+function drawScene() {
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+
+  // Πατούσες
+  drawCube([4, 6, 2], [-3, 0, 1], [0.8, 0.2, 0.2, 1]);
+  drawCube([4, 6, 2], [3, 0, 1], [0.8, 0.2, 0.2, 1]);
+  // Πόδια
+  drawCube([4, 4, 10], [-3, 0, 7], [1, 1, 0.4, 1]);
+  drawCube([4, 4, 10], [3, 0, 7], [1, 1, 0.4, 1]);
+  // Κορμός
+  drawCube([10, 6, 12], [0, 0, 18], [0.9, 0.1, 0.1, 1]);
+  // Χέρια
+  drawCube([4, 2, 10], [-7, 0, 18], [1, 1, 0.4, 1]);
+  drawCube([4, 2, 10], [7, 0, 18], [1, 1, 0.4, 1]);
+  // Κεφάλι
+  drawCube([6, 6, 5], [0, 0, 26.5], [1, 1, 0.4, 1]);
+}
+
+function animate() {
+  animationAngle += 0.01;
+  drawScene();
+  animationId = requestAnimationFrame(animate);
+}
+
+function startAnimation() {
+  if (!animationId) animate();
+}
+
+function stopAnimation() {
+  if (animationId) {
+    cancelAnimationFrame(animationId);
+    animationId = null;
+  }
+}
+
+function main() {
+  canvas = document.getElementById("sceneCanvas");
+  canvas.width = 600;
+  canvas.height = 600;
+  gl = createRenderingContext(canvas);
+  initShaders();
+  initBuffers();
+  gl.clearColor(0.2, 0.2, 0.2, 1);
+  drawScene();
+}
+</script>
+</head>
+<body onload="main()">
+<label>Απόσταση κάμερας: <input type="number" id="camOrthoDistance" value="30"></label>
+<button onclick="startAnimation()">Έναρξη animation</button>
+<button onclick="stopAnimation()">Παύση animation</button>
+<canvas id="sceneCanvas"></canvas>
+</body>
+</html>

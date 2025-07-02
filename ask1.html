@@ -1,0 +1,186 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Cube Scene with Camera Control</title>
+<script src="https://cdn.jsdelivr.net/npm/gl-matrix@2.8.1/dist/gl-matrix-min.js"></script>
+<script id="vShader" type="x-shader/x-vertex">
+attribute vec4 aVertexPosition;
+attribute vec4 aVertexColor;
+uniform mat4 uProjectionMatrix;
+uniform mat4 uViewMatrix;
+varying vec4 vColor;
+void main() {
+  gl_Position = uProjectionMatrix * uViewMatrix * aVertexPosition;
+  vColor = aVertexColor;
+}
+</script>
+<script id="fShader" type="x-shader/x-fragment">
+precision mediump float;
+varying vec4 vColor;
+void main() {
+  gl_FragColor = vColor;
+}
+</script>
+<script>
+var gl;
+var canvas;
+var shadersProgram;
+var vertexPositionAttributePointer;
+var vertexColorAttributePointer;
+var uProjectionMatrixPointer;
+var uViewMatrixPointer;
+var vertexBuffer;
+var colorBuffer;
+
+function createRenderingContext(inCanvas) {
+  var outContext = inCanvas.getContext("webgl") || inCanvas.getContext("experimental-webgl");
+  if (!outContext) alert("WebGL rendering context creation error.");
+  return outContext;
+}
+
+function createCompileShader(shaderType, shaderSource) {
+  var outShader = gl.createShader(shaderType);
+  gl.shaderSource(outShader, shaderSource);
+  gl.compileShader(outShader);
+  if (!gl.getShaderParameter(outShader, gl.COMPILE_STATUS)) {
+    alert("Shader compilation error. " + gl.getShaderInfoLog(outShader));
+    gl.deleteShader(outShader);
+    outShader = null;
+  }
+  return outShader;
+}
+
+function initShaders() {
+  var vertexShader = createCompileShader(gl.VERTEX_SHADER, document.getElementById("vShader").textContent);
+  var fragmentShader = createCompileShader(gl.FRAGMENT_SHADER, document.getElementById("fShader").textContent);
+  shadersProgram = gl.createProgram();
+  gl.attachShader(shadersProgram, vertexShader);
+  gl.attachShader(shadersProgram, fragmentShader);
+  gl.linkProgram(shadersProgram);
+  if (!gl.getProgramParameter(shadersProgram, gl.LINK_STATUS)) alert("Shaders linking error.");
+  gl.useProgram(shadersProgram);
+  vertexPositionAttributePointer = gl.getAttribLocation(shadersProgram, "aVertexPosition");
+  vertexColorAttributePointer = gl.getAttribLocation(shadersProgram, "aVertexColor");
+  gl.enableVertexAttribArray(vertexPositionAttributePointer);
+  gl.enableVertexAttribArray(vertexColorAttributePointer);
+  uProjectionMatrixPointer = gl.getUniformLocation(shadersProgram, "uProjectionMatrix");
+  uViewMatrixPointer = gl.getUniformLocation(shadersProgram, "uViewMatrix");
+}
+
+function initBuffers() {
+  var size = 0.5;
+  var cubeVertices = new Float32Array([
+    -size,-size, size,1, size,-size, size,1, size, size, size,1,
+    -size,-size, size,1, size, size, size,1, -size, size, size,1,
+    -size,-size,-size,1, -size, size,-size,1, size, size,-size,1,
+    -size,-size,-size,1, size, size,-size,1, size,-size,-size,1,
+    -size, size,-size,1, -size, size, size,1, size, size, size,1,
+    -size, size,-size,1, size, size, size,1, size, size,-size,1,
+    -size,-size,-size,1, size,-size,-size,1, size,-size, size,1,
+    -size,-size,-size,1, size,-size, size,1, -size,-size, size,1,
+    size,-size,-size,1, size, size,-size,1, size, size, size,1,
+    size,-size,-size,1, size, size, size,1, size,-size, size,1,
+    -size,-size,-size,1, -size,-size, size,1, -size, size, size,1,
+    -size,-size,-size,1, -size, size, size,1, -size, size,-size,1
+  ]);
+
+  var colors = new Float32Array([
+    ...Array(6).fill([1,0,0,1]).flat(),
+    ...Array(6).fill([0,1,0,1]).flat(),
+    ...Array(6).fill([0,0,1,1]).flat(),
+    ...Array(6).fill([1,1,0,1]).flat(),
+    ...Array(6).fill([1,0,1,1]).flat(),
+    ...Array(6).fill([0,1,1,1]).flat()
+  ]);
+
+  vertexBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, cubeVertices, gl.STATIC_DRAW);
+  vertexBuffer.itemSize = 4;
+  vertexBuffer.itemCount = cubeVertices.length / 4;
+
+  colorBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
+  colorBuffer.itemSize = 4;
+  colorBuffer.itemCount = colors.length / 4;
+}
+
+function getCameraDirectionVector(label) {
+  const dirs = label.split("-").map(part => part.toLowerCase());
+  const dir = { x: 0, y: 0, z: 0 };
+  if (dirs.includes("left")) dir.x = -1;
+  if (dirs.includes("right")) dir.x = 1;
+  if (dirs.includes("front")) dir.y = -1;
+  if (dirs.includes("back")) dir.y = 1;
+  if (dirs.includes("top")) dir.z = 1;
+  if (dirs.includes("bottom")) dir.z = -1;
+  return [dir.x, dir.y, dir.z];
+}
+
+function drawScene() {
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+
+  let distance = parseFloat(document.getElementById("camOrthoDistance").value) || 8;
+  let angleDeg = parseFloat(document.getElementById("viewAngle").value) || 0;
+  let angleRad = angleDeg * Math.PI / 180;
+  let selected = document.querySelector('input[name="camPos"]:checked')?.value || "Right-Back-Top";
+  let dirVec = getCameraDirectionVector(selected);
+
+  let rotatedX = dirVec[0] * Math.cos(angleRad) - dirVec[1] * Math.sin(angleRad);
+  let rotatedY = dirVec[0] * Math.sin(angleRad) + dirVec[1] * Math.cos(angleRad);
+  let rotatedZ = dirVec[2];
+  let eye = [distance * rotatedX, distance * rotatedY, distance * rotatedZ];
+
+  let projectionMatrix = mat4.create();
+  mat4.perspective(projectionMatrix, 60 * Math.PI / 180, canvas.width / canvas.height, 0.001, 10 * distance);
+
+  let viewMatrix = mat4.create();
+  mat4.lookAt(viewMatrix, eye, [0, 0, 0], [0, 0, 1]);
+
+  gl.uniformMatrix4fv(uProjectionMatrixPointer, false, projectionMatrix);
+  gl.uniformMatrix4fv(uViewMatrixPointer, false, viewMatrix);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+  gl.vertexAttribPointer(vertexPositionAttributePointer, vertexBuffer.itemSize, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+  gl.vertexAttribPointer(vertexColorAttributePointer, colorBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+  gl.drawArrays(gl.TRIANGLES, 0, vertexBuffer.itemCount);
+}
+
+function main() {
+  canvas = document.getElementById("sceneCanvas");
+  canvas.width = 600;
+  canvas.height = 600;
+  gl = createRenderingContext(canvas);
+  initShaders();
+  initBuffers();
+  gl.clearColor(0.2, 0.2, 0.2, 1.0);
+  drawScene();
+}
+</script>
+</head>
+<body onload="main()">
+<div>
+  <label>Γωνία θέασης (περιστροφή): <input type="number" id="viewAngle" value="0"></label><br>
+  <label>Απόσταση κάμερας: <input type="number" id="camOrthoDistance" value="8"></label><br>
+  <fieldset>
+    <legend>Θέση Κάμερας</legend>
+    <label><input type="radio" name="camPos" value="Left-Front-Top">Left-Front-Top</label>
+    <label><input type="radio" name="camPos" value="Left-Front-Bottom">Left-Front-Bottom</label>
+    <label><input type="radio" name="camPos" value="Left-Back-Top">Left-Back-Top</label>
+    <label><input type="radio" name="camPos" value="Left-Back-Bottom">Left-Back-Bottom</label>
+    <label><input type="radio" name="camPos" value="Right-Front-Top">Right-Front-Top</label>
+    <label><input type="radio" name="camPos" value="Right-Front-Bottom">Right-Front-Bottom</label>
+    <label><input type="radio" name="camPos" value="Right-Back-Top" checked>Right-Back-Top</label>
+    <label><input type="radio" name="camPos" value="Right-Back-Bottom">Right-Back-Bottom</label>
+  </fieldset>
+  <button onclick="drawScene()">Επανασχεδίαση</button>
+</div>
+<canvas id="sceneCanvas"></canvas>
+</body>
+</html>
