@@ -2,8 +2,9 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Robot Scene with Textures</title>
+<title>Robot Scene with Skybox and Floor</title>
 <script src="https://cdn.jsdelivr.net/npm/gl-matrix@2.8.1/dist/gl-matrix-min.js"></script>
+
 <script id="vShader" type="x-shader/x-vertex">
 attribute vec4 aVertexPosition;
 attribute vec2 aTextureCoord;
@@ -16,6 +17,7 @@ void main() {
   vTexCoord = aTextureCoord;
 }
 </script>
+
 <script id="fShader" type="x-shader/x-fragment">
 precision mediump float;
 uniform sampler2D uSampler;
@@ -24,6 +26,7 @@ void main() {
   gl_FragColor = texture2D(uSampler, vTexCoord);
 }
 </script>
+
 <script>
 var gl, canvas;
 var shadersProgram;
@@ -31,6 +34,7 @@ var vertexPositionAttributePointer, textureCoordAttributePointer;
 var uProjectionMatrixPointer, uViewMatrixPointer, uModelMatrixPointer, uSamplerPointer;
 var vertexBuffer, texCoordBuffer;
 var faceTexture, earTexture, metalTexture;
+var skyboxTexture, floorTexture;
 var animationAngle = 0, animationId = null;
 
 function createRenderingContext(inCanvas) {
@@ -124,7 +128,7 @@ function drawTexturedCube(scale, translate, textures) {
   mat4.scale(modelMatrix, modelMatrix, scale);
 
   let projectionMatrix = mat4.create();
-  mat4.perspective(projectionMatrix, Math.PI/3, canvas.width/canvas.height, 0.1, 100);
+  mat4.perspective(projectionMatrix, Math.PI/3, canvas.width/canvas.height, 0.1, 5000);
   let camDist = parseFloat(document.getElementById("camOrthoDistance").value) || 30;
   let camX = camDist * Math.cos(animationAngle);
   let camY = camDist * Math.sin(animationAngle);
@@ -149,9 +153,18 @@ function drawTexturedCube(scale, translate, textures) {
   }
 }
 
+function drawExtras() {
+  // Skybox
+  drawTexturedCube([1000, 1000, 1000], [0, 0, 1000], Array(6).fill(skyboxTexture));
+  // Πάτωμα
+  drawTexturedCube([30, 30, 0.1], [0, 0, 0], Array(6).fill(floorTexture));
+}
+
 function drawScene() {
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.enable(gl.DEPTH_TEST);
+
+  drawExtras();
 
   drawTexturedCube([4, 6, 2], [-3, 0, 1], Array(6).fill(metalTexture));
   drawTexturedCube([4, 6, 2], [3, 0, 1], Array(6).fill(metalTexture));
@@ -160,9 +173,7 @@ function drawScene() {
   drawTexturedCube([10, 6, 12], [0, 0, 18], Array(6).fill(metalTexture));
   drawTexturedCube([4, 2, 10], [-7, 0, 18], Array(6).fill(metalTexture));
   drawTexturedCube([4, 2, 10], [7, 0, 18], Array(6).fill(metalTexture));
-
-  // Κεφάλι με textures για πρόσωπο/αυτιά/υπόλοιπες
-  drawTexturedCube([6, 6, 5], [0, 0, 26.5], [ metalTexture, metalTexture,faceTexture, metalTexture, earTexture, earTexture]);
+  drawTexturedCube([6, 6, 5], [0, 0, 26.5], [metalTexture, metalTexture, faceTexture, metalTexture, earTexture, earTexture]);
 }
 
 function animate() {
@@ -170,8 +181,17 @@ function animate() {
   drawScene();
   animationId = requestAnimationFrame(animate);
 }
-function startAnimation() { if (!animationId) animate(); }
-function stopAnimation() { if (animationId) { cancelAnimationFrame(animationId); animationId = null; } }
+
+function startAnimation() {
+  if (!animationId) animate();
+}
+
+function stopAnimation() {
+  if (animationId) {
+    cancelAnimationFrame(animationId);
+    animationId = null;
+  }
+}
 
 function main() {
   canvas = document.getElementById("sceneCanvas");
@@ -180,9 +200,13 @@ function main() {
   gl = createRenderingContext(canvas);
   initShaders();
   initBuffers();
+
   metalTexture = loadTexture("metal.jpg");
   faceTexture = loadTexture("face.jpg");
   earTexture = loadTexture("ear.jpg");
+  skyboxTexture = loadTexture("skybox.jpg");
+  floorTexture = loadTexture("floor-names.jpg");
+
   gl.clearColor(0.2, 0.2, 0.2, 1);
   drawScene();
 }
