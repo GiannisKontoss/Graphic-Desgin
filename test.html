@@ -1,221 +1,228 @@
 <!DOCTYPE HTML>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Robot Scene with Skybox and Floor</title>
-<script src="https://cdn.jsdelivr.net/npm/gl-matrix@2.8.1/dist/gl-matrix-min.js"></script>
+  <meta charset="UTF-8">
+  <title>Robot Scene with Skybox and Floor</title>
+  <script src="https://cdn.jsdelivr.net/npm/gl-matrix@2.8.1/dist/gl-matrix-min.js"></script>
 
-<script id="vShader" type="x-shader/x-vertex">
-attribute vec4 aVertexPosition;
-attribute vec2 aTextureCoord;
-uniform mat4 uProjectionMatrix;
-uniform mat4 uViewMatrix;
-uniform mat4 uModelMatrix;
-varying vec2 vTexCoord;
-void main() {
-  gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * aVertexPosition;
-  vTexCoord = aTextureCoord;
-}
-</script>
-
-<script id="fShader" type="x-shader/x-fragment">
-precision mediump float;
-uniform sampler2D uSampler;
-varying vec2 vTexCoord;
-void main() {
-  gl_FragColor = texture2D(uSampler, vTexCoord);
-}
-</script>
-
-<script>
-var gl, canvas;
-var shadersProgram;
-var vertexPositionAttributePointer, textureCoordAttributePointer;
-var uProjectionMatrixPointer, uViewMatrixPointer, uModelMatrixPointer, uSamplerPointer;
-var vertexBuffer, texCoordBuffer;
-var faceTexture, earTexture, metalTexture;
-var skyboxTexture, floorTexture;
-var animationAngle = 0, animationId = null;
-
-function createRenderingContext(inCanvas) {
-  let ctx = inCanvas.getContext("webgl") || inCanvas.getContext("experimental-webgl");
-  if (!ctx) alert("WebGL rendering context creation error.");
-  return ctx;
-}
-
-function createCompileShader(type, source) {
-  let shader = gl.createShader(type);
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    alert("Shader compilation error: " + gl.getShaderInfoLog(shader));
-    return null;
+  <script id="vShader" type="x-shader/x-vertex">
+  attribute vec4 aVertexPosition;
+  attribute vec2 aTextureCoord;
+  uniform mat4 uProjectionMatrix;
+  uniform mat4 uViewMatrix;
+  uniform mat4 uModelMatrix;
+  varying vec2 vTexCoord;
+  void main() {
+    gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * aVertexPosition;
+    vTexCoord = aTextureCoord;
   }
-  return shader;
-}
+  </script>
 
-function initShaders() {
-  let vs = createCompileShader(gl.VERTEX_SHADER, document.getElementById("vShader").textContent);
-  let fs = createCompileShader(gl.FRAGMENT_SHADER, document.getElementById("fShader").textContent);
-  shadersProgram = gl.createProgram();
-  gl.attachShader(shadersProgram, vs);
-  gl.attachShader(shadersProgram, fs);
-  gl.linkProgram(shadersProgram);
-  if (!gl.getProgramParameter(shadersProgram, gl.LINK_STATUS)) alert("Shader linking error");
-  gl.useProgram(shadersProgram);
-
-  vertexPositionAttributePointer = gl.getAttribLocation(shadersProgram, "aVertexPosition");
-  textureCoordAttributePointer = gl.getAttribLocation(shadersProgram, "aTextureCoord");
-  gl.enableVertexAttribArray(vertexPositionAttributePointer);
-  gl.enableVertexAttribArray(textureCoordAttributePointer);
-
-  uProjectionMatrixPointer = gl.getUniformLocation(shadersProgram, "uProjectionMatrix");
-  uViewMatrixPointer = gl.getUniformLocation(shadersProgram, "uViewMatrix");
-  uModelMatrixPointer = gl.getUniformLocation(shadersProgram, "uModelMatrix");
-  uSamplerPointer = gl.getUniformLocation(shadersProgram, "uSampler");
-}
-
-function loadTexture(url) {
-  let texture = gl.createTexture();
-  let image = new Image();
-  image.onload = function() {
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.generateMipmap(gl.TEXTURE_2D);
-  };
-  image.src = url;
-  return texture;
-}
-
-function initBuffers() {
-  let s = 0.5;
-  let vertices = new Float32Array([
-    -s,-s, s,  s,-s, s,  s, s, s,  -s, s, s, // front
-    -s,-s,-s,  -s, s,-s,  s, s,-s,  s,-s,-s, // back
-    -s, s,-s,  -s, s, s,  s, s, s,  s, s,-s, // top
-    -s,-s,-s,  s,-s,-s,  s,-s, s,  -s,-s, s, // bottom
-    -s,-s,-s,  -s,-s, s,  -s, s, s,  -s, s,-s, // left
-    s,-s,-s,  s, s,-s,  s, s, s,  s,-s, s  // right
-  ]);
-
-  let texCoords = new Float32Array([
-    0,1, 0,0, 1,0, 1,1,
-    0,0, 1,0, 1,1, 0,1,
-    1,0, 1,1, 0,1, 0,0,
-    0,0, 1,0, 1,1, 0,1,
-    1,0, 1,1, 0,1, 0,0,
-    1,1, 0,1, 0,0, 1,0
-  ]);
-
-  vertexBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-  vertexBuffer.itemSize = 3;
-  vertexBuffer.numItems = 24;
-
-  texCoordBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
-  texCoordBuffer.itemSize = 2;
-}
-
-function drawTexturedCube(scale, translate, textures) {
-  let modelMatrix = mat4.create();
-  mat4.translate(modelMatrix, modelMatrix, translate);
-  mat4.scale(modelMatrix, modelMatrix, scale);
-
-  let projectionMatrix = mat4.create();
-  mat4.perspective(projectionMatrix, Math.PI/3, canvas.width/canvas.height, 0.1, 5000);
-  let camDist = parseFloat(document.getElementById("camOrthoDistance").value) || 30;
-  let camX = camDist * Math.cos(animationAngle);
-  let camY = camDist * Math.sin(animationAngle);
-  let camZ = 25 + 10 * Math.sin(animationAngle / 2);
-  let viewMatrix = mat4.create();
-  mat4.lookAt(viewMatrix, [camX, camY, camZ], [0,0,18], [0,0,1]);
-
-  gl.uniformMatrix4fv(uProjectionMatrixPointer, false, projectionMatrix);
-  gl.uniformMatrix4fv(uViewMatrixPointer, false, viewMatrix);
-  gl.uniformMatrix4fv(uModelMatrixPointer, false, modelMatrix);
-
-  gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-  gl.vertexAttribPointer(vertexPositionAttributePointer, 3, gl.FLOAT, false, 0, 0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-  gl.vertexAttribPointer(textureCoordAttributePointer, 2, gl.FLOAT, false, 0, 0);
-
-  for (let i = 0; i < 6; i++) {
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, textures[i] || metalTexture);
-    gl.uniform1i(uSamplerPointer, 0);
-    gl.drawArrays(gl.TRIANGLE_FAN, i * 4, 4);
+  <script id="fShader" type="x-shader/x-fragment">
+  precision mediump float;
+  uniform sampler2D uSampler;
+  varying vec2 vTexCoord;
+  void main() {
+    gl_FragColor = texture2D(uSampler, vTexCoord);
   }
-}
+  </script>
 
-function drawExtras() {
-  // Skybox
-  drawTexturedCube([1000, 1000, 1000], [0, 0, 1000], Array(6).fill(skyboxTexture));
-  // Πάτωμα
-  drawTexturedCube([30, 30, 0.1], [0, 0, 0], Array(6).fill(floorTexture));
-}
+  <script>
+  var gl, canvas;
+  var shadersProgram;
+  var vertexPositionAttributePointer, textureCoordAttributePointer;
+  var uProjectionMatrixPointer, uViewMatrixPointer, uModelMatrixPointer, uSamplerPointer;
+  var vertexBuffer, texCoordBuffer;
+  var faceTexture, earTexture, metalTexture, skyboxTexture, floorTexture;
+  var animationAngle = 0, animationId = null;
 
-function drawScene() {
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  gl.enable(gl.DEPTH_TEST);
-
-  drawExtras();
-
-  drawTexturedCube([4, 6, 2], [-3, 0, 1], Array(6).fill(metalTexture));
-  drawTexturedCube([4, 6, 2], [3, 0, 1], Array(6).fill(metalTexture));
-  drawTexturedCube([4, 4, 10], [-3, 0, 7], Array(6).fill(metalTexture));
-  drawTexturedCube([4, 4, 10], [3, 0, 7], Array(6).fill(metalTexture));
-  drawTexturedCube([10, 6, 12], [0, 0, 18], Array(6).fill(metalTexture));
-  drawTexturedCube([4, 2, 10], [-7, 0, 18], Array(6).fill(metalTexture));
-  drawTexturedCube([4, 2, 10], [7, 0, 18], Array(6).fill(metalTexture));
-  drawTexturedCube([6, 6, 5], [0, 0, 26.5], [metalTexture, metalTexture, faceTexture, metalTexture, earTexture, earTexture]);
-}
-
-function animate() {
-  animationAngle += 0.01;
-  drawScene();
-  animationId = requestAnimationFrame(animate);
-}
-
-function startAnimation() {
-  if (!animationId) animate();
-}
-
-function stopAnimation() {
-  if (animationId) {
-    cancelAnimationFrame(animationId);
-    animationId = null;
+  function createRenderingContext(inCanvas) {
+    let ctx = inCanvas.getContext("webgl") || inCanvas.getContext("experimental-webgl");
+    if (!ctx) alert("WebGL rendering context creation error.");
+    return ctx;
   }
-}
 
-function main() {
-  canvas = document.getElementById("sceneCanvas");
-  canvas.width = 600;
-  canvas.height = 600;
-  gl = createRenderingContext(canvas);
-  initShaders();
-  initBuffers();
+  function createCompileShader(type, source) {
+    let shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      alert("Shader compilation error: " + gl.getShaderInfoLog(shader));
+      return null;
+    }
+    return shader;
+  }
 
-  metalTexture = loadTexture("metal.jpg");
-  faceTexture = loadTexture("face.jpg");
-  earTexture = loadTexture("ear.jpg");
-  skyboxTexture = loadTexture("skybox.jpg");
-  floorTexture = loadTexture("floor-names.jpg");
+  function initShaders() {
+    let vs = createCompileShader(gl.VERTEX_SHADER, document.getElementById("vShader").textContent);
+    let fs = createCompileShader(gl.FRAGMENT_SHADER, document.getElementById("fShader").textContent);
+    shadersProgram = gl.createProgram();
+    gl.attachShader(shadersProgram, vs);
+    gl.attachShader(shadersProgram, fs);
+    gl.linkProgram(shadersProgram);
+    if (!gl.getProgramParameter(shadersProgram, gl.LINK_STATUS)) alert("Shader linking error");
+    gl.useProgram(shadersProgram);
 
-  gl.clearColor(0.2, 0.2, 0.2, 1);
-  drawScene();
-}
-</script>
+    vertexPositionAttributePointer = gl.getAttribLocation(shadersProgram, "aVertexPosition");
+    textureCoordAttributePointer = gl.getAttribLocation(shadersProgram, "aTextureCoord");
+    gl.enableVertexAttribArray(vertexPositionAttributePointer);
+    gl.enableVertexAttribArray(textureCoordAttributePointer);
+
+    uProjectionMatrixPointer = gl.getUniformLocation(shadersProgram, "uProjectionMatrix");
+    uViewMatrixPointer = gl.getUniformLocation(shadersProgram, "uViewMatrix");
+    uModelMatrixPointer = gl.getUniformLocation(shadersProgram, "uModelMatrix");
+    uSamplerPointer = gl.getUniformLocation(shadersProgram, "uSampler");
+  }
+
+  function loadTexture(url) {
+    let texture = gl.createTexture();
+    let image = new Image();
+    image.onload = function() {
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.generateMipmap(gl.TEXTURE_2D);
+    };
+    image.src = url;
+    return texture;
+  }
+
+  function initBuffers() {
+    let s = 0.5;
+    let vertices = new Float32Array([
+      -s,-s, s,  s,-s, s,  s, s, s,  -s, s, s, // front
+      -s,-s,-s,  -s, s,-s,  s, s,-s,  s,-s,-s, // back
+      -s, s,-s,  -s, s, s,  s, s, s,  s, s,-s, // top
+      -s,-s,-s,  s,-s,-s,  s,-s, s,  -s,-s, s, // bottom
+      -s,-s,-s,  -s,-s, s,  -s, s, s,  -s, s,-s, // left
+      s,-s,-s,  s, s,-s,  s, s, s,  s,-s, s  // right
+    ]);
+
+    let texCoords = new Float32Array([
+      0,1, 0,0, 1,0, 1,1,
+      0,0, 1,0, 1,1, 0,1,
+      1,0, 1,1, 0,1, 0,0,
+      0,0, 1,0, 1,1, 0,1,
+      1,0, 1,1, 0,1, 0,0,
+      1,1, 0,1, 0,0, 1,0
+    ]);
+
+    vertexBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+    vertexBuffer.itemSize = 3;
+    vertexBuffer.numItems = 24;
+
+    texCoordBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
+    texCoordBuffer.itemSize = 2;
+  }
+
+  function drawTexturedCube(scale, translate, textures) {
+    let modelMatrix = mat4.create();
+    mat4.translate(modelMatrix, modelMatrix, translate);
+    mat4.scale(modelMatrix, modelMatrix, scale);
+
+    let projectionMatrix = mat4.create();
+    mat4.perspective(projectionMatrix, Math.PI/3, canvas.width/canvas.height, 0.1, 5000);
+    let camDist = parseFloat(document.getElementById("camOrthoDistance").value) || 30;
+    let camX = camDist * Math.cos(animationAngle);
+    let camY = camDist * Math.sin(animationAngle);
+    let camZ = 25 + 10 * Math.sin(animationAngle / 2);
+    let viewMatrix = mat4.create();
+    mat4.lookAt(viewMatrix, [camX, camY, camZ], [0,0,18], [0,0,1]);
+
+    gl.uniformMatrix4fv(uProjectionMatrixPointer, false, projectionMatrix);
+    gl.uniformMatrix4fv(uViewMatrixPointer, false, viewMatrix);
+    gl.uniformMatrix4fv(uModelMatrixPointer, false, modelMatrix);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+    gl.vertexAttribPointer(vertexPositionAttributePointer, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+    gl.vertexAttribPointer(textureCoordAttributePointer, 2, gl.FLOAT, false, 0, 0);
+
+    for (let i = 0; i < 6; i++) {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, textures[i] || metalTexture);
+      gl.uniform1i(uSamplerPointer, 0);
+      gl.drawArrays(gl.TRIANGLE_FAN, i * 4, 4);
+    }
+  }
+
+  function drawSkybox(scale, translate, texture) {
+    gl.disable(gl.CULL_FACE); // Μη κρύβεις πίσω πλευρές
+    drawTexturedCube(scale, translate, Array(6).fill(texture));
+    gl.enable(gl.CULL_FACE); // Επανενεργοποίησε
+  }
+
+  function drawExtras() {
+    drawSkybox([1000, 1000, 1000], [0, 0, 0], skyboxTexture);
+    drawTexturedCube([30, 30, 0.1], [0, 0, -0.1], Array(6).fill(floorTexture));
+  }
+
+  function drawScene() {
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
+
+    drawExtras();
+
+    drawTexturedCube([4, 6, 2], [-3, 0, 1], Array(6).fill(metalTexture));
+    drawTexturedCube([4, 6, 2], [3, 0, 1], Array(6).fill(metalTexture));
+    drawTexturedCube([4, 4, 10], [-3, 0, 7], Array(6).fill(metalTexture));
+    drawTexturedCube([4, 4, 10], [3, 0, 7], Array(6).fill(metalTexture));
+    drawTexturedCube([10, 6, 12], [0, 0, 18], Array(6).fill(metalTexture));
+    drawTexturedCube([4, 2, 10], [-7, 0, 18], Array(6).fill(metalTexture));
+    drawTexturedCube([4, 2, 10], [7, 0, 18], Array(6).fill(metalTexture));
+    drawTexturedCube([6, 6, 5], [0, 0, 26.5], [metalTexture, metalTexture, faceTexture, metalTexture, earTexture, earTexture]);
+  }
+
+  function animate() {
+    animationAngle += 0.01;
+    drawScene();
+    animationId = requestAnimationFrame(animate);
+  }
+
+  function startAnimation() {
+    if (!animationId) animate();
+  }
+
+  function stopAnimation() {
+    if (animationId) {
+      cancelAnimationFrame(animationId);
+      animationId = null;
+    }
+  }
+
+  function main() {
+    canvas = document.getElementById("sceneCanvas");
+    canvas.width = 600;
+    canvas.height = 600;
+    gl = createRenderingContext(canvas);
+    initShaders();
+    initBuffers();
+
+    metalTexture = loadTexture("metal.jpg");
+    faceTexture = loadTexture("face.jpg");
+    earTexture = loadTexture("ear.jpg");
+    skyboxTexture = loadTexture("skybox.jpg");
+    floorTexture = loadTexture("floor-names.jpg");
+
+    gl.clearColor(0.2, 0.2, 0.2, 1);
+    gl.enable(gl.DEPTH_TEST);
+    gl.enable(gl.CULL_FACE);
+
+    drawScene();
+  }
+  </script>
 </head>
 <body onload="main()">
-<label>Απόσταση κάμερας: <input type="number" id="camOrthoDistance" value="30"></label>
-<button onclick="startAnimation()">Έναρξη animation</button>
-<button onclick="stopAnimation()">Παύση animation</button>
-<canvas id="sceneCanvas"></canvas>
+  <label>Απόσταση κάμερας: <input type="number" id="camOrthoDistance" value="30"></label>
+  <button onclick="startAnimation()">Έναρξη animation</button>
+  <button onclick="stopAnimation()">Παύση animation</button>
+  <canvas id="sceneCanvas"></canvas>
 </body>
 </html>
+
