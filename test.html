@@ -36,6 +36,20 @@
   var faceTexture, earTexture, metalTexture, skyboxTexture, floorTexture;
   var animationAngle = 0, animationId = null;
 
+  // Μεταβλητές για τον έλεγχο του ποντικιού
+  var isDragging = false;
+  var lastMouseX, lastMouseY;
+  var cameraElevation = 0;
+
+  // Νέες μεταβλητές για τις γωνίες περιστροφής των μελών του ρομπότ
+  var rightArmAngle = 0; // 0 (κάτω) έως π (πάνω)
+  var leftArmAngle = 0;  // 0 (κάτω) έως π (πάνω)
+  var headAngle = 0;     // 0 (όρθιο) έως π/2 (σκυμμένο)
+  var rightLegAngle = 0; // 0 (κάτω) έως π/2 (οριζόντια μπροστά)
+  var leftLegAngle = 0;  // 0 (κάτω) έως π/2 (οριζόντια μπροστά)
+
+  var selectedPart = "none"; // 'rightArm', 'leftArm', 'head', 'rightLeg', 'leftLeg'
+
   function createRenderingContext(inCanvas) {
     let ctx = inCanvas.getContext("webgl") || inCanvas.getContext("experimental-webgl");
     if (!ctx) alert("WebGL rendering context creation error.");
@@ -121,17 +135,14 @@
     texCoordBuffer.itemSize = 2;
   }
 
-  function drawTexturedCube(scale, translate, textures) {
-    let modelMatrix = mat4.create();
-    mat4.translate(modelMatrix, modelMatrix, translate);
-    mat4.scale(modelMatrix, modelMatrix, scale);
-
+  // Βασική συνάρτηση σχεδίασης κύβου που δέχεται μια pre-calculated modelMatrix
+  function drawCubeWithTransform(modelMatrix, textures) {
     let projectionMatrix = mat4.create();
     mat4.perspective(projectionMatrix, Math.PI/3, canvas.width/canvas.height, 0.1, 5000);
     let camDist = parseFloat(document.getElementById("camOrthoDistance").value) || 30;
     let camX = camDist * Math.cos(animationAngle);
     let camY = camDist * Math.sin(animationAngle);
-    let camZ = 25 + 10 * Math.sin(animationAngle / 2);
+    let camZ = 25 + 10 * Math.sin(animationAngle / 2) + cameraElevation;
     let viewMatrix = mat4.create();
     mat4.lookAt(viewMatrix, [camX, camY, camZ], [0,0,18], [0,0,1]);
 
@@ -153,14 +164,20 @@
   }
 
   function drawSkybox(scale, translate, texture) {
-    gl.disable(gl.CULL_FACE); // Μη κρύβεις πίσω πλευρές
-    drawTexturedCube(scale, translate, Array(6).fill(texture));
-    gl.enable(gl.CULL_FACE); // Επανενεργοποίησε
+    gl.disable(gl.CULL_FACE);
+    let modelMatrix = mat4.create();
+    mat4.translate(modelMatrix, modelMatrix, translate);
+    mat4.scale(modelMatrix, modelMatrix, scale);
+    drawCubeWithTransform(modelMatrix, Array(6).fill(texture));
+    gl.enable(gl.CULL_FACE);
   }
 
   function drawExtras() {
     drawSkybox([1000, 1000, 1000], [0, 0, 0], skyboxTexture);
-    drawTexturedCube([30, 30, 0.1], [0, 0, -0.1], Array(6).fill(floorTexture));
+    let floorModelMatrix = mat4.create();
+    mat4.translate(floorModelMatrix, floorModelMatrix, [0, 0, -0.1]);
+    mat4.scale(floorModelMatrix, floorModelMatrix, [30, 30, 0.1]);
+    drawCubeWithTransform(floorModelMatrix, Array(6).fill(floorTexture));
   }
 
   function drawScene() {
@@ -169,15 +186,73 @@
 
     drawExtras();
 
-    drawTexturedCube([4, 6, 2], [-3, 0, 1], Array(6).fill(metalTexture));
-    drawTexturedCube([4, 6, 2], [3, 0, 1], Array(6).fill(metalTexture));
-    drawTexturedCube([4, 4, 10], [-3, 0, 7], Array(6).fill(metalTexture));
-    drawTexturedCube([4, 4, 10], [3, 0, 7], Array(6).fill(metalTexture));
-    drawTexturedCube([10, 6, 12], [0, 0, 18], Array(6).fill(metalTexture));
-    drawTexturedCube([4, 2, 10], [-7, 0, 18], Array(6).fill(metalTexture));
-    drawTexturedCube([4, 2, 10], [7, 0, 18], Array(6).fill(metalTexture));
-    drawTexturedCube([6, 6, 5], [0, 0, 26.5], [metalTexture, metalTexture, faceTexture, metalTexture, earTexture, earTexture]);
+    // Σώμα ρομπότ (κορμός)
+    let bodyMatrix = mat4.create();
+    mat4.translate(bodyMatrix, bodyMatrix, [0, 0, 18]);
+    mat4.scale(bodyMatrix, bodyMatrix, [10, 6, 12]);
+    drawCubeWithTransform(bodyMatrix, Array(6).fill(metalTexture));
+
+    // Κεφάλι
+    let headMatrix = mat4.create();
+    // Μετατόπιση στο σημείο περιστροφής (κάτω μέρος του κεφαλιού)
+    mat4.translate(headMatrix, headMatrix, [0, 0, 26.5 - 2.5]); // Κέντρο κεφαλιού 26.5, ύψος 5, κάτω μέρος 26.5 - 2.5 = 24
+    mat4.rotate(headMatrix, headMatrix, headAngle, [1, 0, 0]); // Περιστροφή γύρω από τον άξονα Χ
+    mat4.translate(headMatrix, headMatrix, [0, 0, 2.5]); // Μετατόπιση πίσω στο κέντρο του κεφαλιού
+    mat4.scale(headMatrix, headMatrix, [6, 6, 5]);
+    drawCubeWithTransform(headMatrix, [metalTexture, metalTexture, faceTexture, metalTexture, earTexture, earTexture]);
+
+    // Δεξί χέρι (άνω μέρος)
+    // Σημείο περιστροφής: -7 (x), 0 (y), 18 + 6 (z) = 24 (top of body, where arm attaches)
+    let rightArmUpperMatrix = mat4.create();
+    mat4.translate(rightArmUpperMatrix, rightArmUpperMatrix, [-7, 0, 24]); // Μετατόπιση στον ώμο
+    mat4.rotate(rightArmUpperMatrix, rightArmUpperMatrix, rightArmAngle, [1, 0, 0]); // Περιστροφή γύρω από τον άξονα Χ
+    mat4.translate(rightArmUpperMatrix, rightArmUpperMatrix, [0, 0, -5]); // Μετατόπιση προς τα κάτω για να είναι το κέντρο του χεριού στη σωστή θέση
+    mat4.scale(rightArmUpperMatrix, rightArmUpperMatrix, [4, 2, 10]); // Scale του χεριού
+    drawCubeWithTransform(rightArmUpperMatrix, Array(6).fill(metalTexture));
+
+    // Αριστερό χέρι (άνω μέρος)
+    let leftArmUpperMatrix = mat4.create();
+    mat4.translate(leftArmUpperMatrix, leftArmUpperMatrix, [7, 0, 24]); // Μετατόπιση στον ώμο
+    mat4.rotate(leftArmUpperMatrix, leftArmUpperMatrix, leftArmAngle, [1, 0, 0]); // Περιστροφή γύρω από τον άξονα Χ
+    mat4.translate(leftArmUpperMatrix, leftArmUpperMatrix, [0, 0, -5]); // Μετατόπιση προς τα κάτω
+    mat4.scale(leftArmUpperMatrix, leftArmUpperMatrix, [4, 2, 10]);
+    drawCubeWithTransform(leftArmUpperMatrix, Array(6).fill(metalTexture));
+
+
+    // Δεξί πόδι (άνω μέρος)
+    // Σημείο περιστροφής: -3 (x), 0 (y), 18 - 6 (z) = 12 (bottom of body, where leg attaches)
+    let rightLegUpperMatrix = mat4.create();
+    mat4.translate(rightLegUpperMatrix, rightLegUpperMatrix, [-3, 0, 12]); // Μετατόπιση στο ισχίο (κάτω μέρος κορμού)
+    mat4.rotate(rightLegUpperMatrix, rightLegUpperMatrix, rightLegAngle, [1, 0, 0]); // Περιστροφή γύρω από τον άξονα Χ
+    mat4.translate(rightLegUpperMatrix, rightLegUpperMatrix, [0, 0, -5]); // Μετατόπιση προς τα κάτω για να είναι το κέντρο του ποδιού στη σωστή θέση
+    mat4.scale(rightLegUpperMatrix, rightLegUpperMatrix, [4, 4, 10]); // Scale του άνω ποδιού
+    drawCubeWithTransform(rightLegUpperMatrix, Array(6).fill(metalTexture));
+
+    // Δεξιά πατούσα (κάτω μέρος ποδιού)
+    let rightFootMatrix = mat4.create();
+    mat4.copy(rightFootMatrix, rightLegUpperMatrix); // Ξεκινάμε από τη μήτρα του άνω ποδιού
+    mat4.translate(rightFootMatrix, rightFootMatrix, [0, 0, -4.5]); // Αλλαγή από -6 σε -4.5
+    mat4.scale(rightFootMatrix, rightFootMatrix, [1, 3, 0.2]); // Scale της πατούσας (αρχικό [4, 6, 2] -> [1, 3, 0.2] για να φαίνεται σαν πατούσα)
+    drawCubeWithTransform(rightFootMatrix, Array(6).fill(metalTexture));
+
+
+    // Αριστερό πόδι (άνω μέρος)
+    let leftLegUpperMatrix = mat4.create();
+    mat4.translate(leftLegUpperMatrix, leftLegUpperMatrix, [3, 0, 12]); // Μετατόπιση στο ισχίο
+    mat4.rotate(leftLegUpperMatrix, leftLegUpperMatrix, leftLegAngle, [1, 0, 0]); // Περιστροφή γύρω από τον άξονα Χ
+    mat4.translate(leftLegUpperMatrix, leftLegUpperMatrix, [0, 0, -5]); // Μετατόπιση προς τα κάτω
+    mat4.scale(leftLegUpperMatrix, leftLegUpperMatrix, [4, 4, 10]);
+    drawCubeWithTransform(leftLegUpperMatrix, Array(6).fill(metalTexture));
+
+    // Αριστερή πατούσα (κάτω μέρος ποδιού)
+    let leftFootMatrix = mat4.create();
+    mat4.copy(leftFootMatrix, leftLegUpperMatrix); // Ξεκινάμε από τη μήτρα του άνω ποδιού
+    mat4.translate(leftFootMatrix, leftFootMatrix, [0, 0, -4.5]); // Αλλαγή από -6 σε -4.5
+    mat4.scale(leftFootMatrix, leftFootMatrix, [1, 3, 0.2]); // Scale της πατούσας
+    drawCubeWithTransform(leftFootMatrix, Array(6).fill(metalTexture));
+
   }
+
 
   function animate() {
     animationAngle += 0.01;
@@ -194,6 +269,12 @@
       cancelAnimationFrame(animationId);
       animationId = null;
     }
+  }
+
+  // Συνάρτηση για την ενημέρωση της επιλεγμένης επιλογής
+  function selectRobotPart(part) {
+      selectedPart = part;
+      console.log("Selected part:", selectedPart); // Για debugging
   }
 
   function main() {
@@ -215,6 +296,66 @@
     gl.enable(gl.CULL_FACE);
 
     drawScene();
+
+    // Χειριστές γεγονότων ποντικιού για την κάμερα
+    canvas.addEventListener('mousedown', function(e) {
+      isDragging = true;
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+      stopAnimation();
+    });
+
+    canvas.addEventListener('mouseup', function() {
+      isDragging = false;
+    });
+
+    canvas.addEventListener('mousemove', function(e) {
+      if (!isDragging) return;
+
+      let deltaX = e.clientX - lastMouseX;
+      let deltaY = e.clientY - lastMouseY;
+
+      animationAngle += deltaX * 0.01;
+      cameraElevation -= deltaY * 0.1;
+
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+
+      drawScene();
+    });
+
+    // Χειριστής γεγονότων ροδέλας ποντικιού για τον έλεγχο των μελών του ρομπότ
+    canvas.addEventListener('wheel', function(e) {
+        e.preventDefault(); // Αποτρέπει το scroll της σελίδας
+
+        const scrollAmount = e.deltaY * 0.005; // Ρυθμίστε την ευαισθησία
+
+        switch (selectedPart) {
+            case 'rightArm':
+                rightArmAngle = Math.max(0, Math.min(Math.PI, rightArmAngle + scrollAmount));
+                break;
+            case 'leftArm':
+                leftArmAngle = Math.max(0, Math.min(Math.PI, leftArmAngle + scrollAmount));
+                break;
+            case 'head':
+                headAngle = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, headAngle + scrollAmount)); // Περιορισμός 90 μοιρών
+                break;
+            case 'rightLeg':
+                rightLegAngle = Math.max(0, Math.min(Math.PI / 2, rightLegAngle + scrollAmount));
+                break;
+            case 'leftLeg':
+                leftLegAngle = Math.max(0, Math.min(Math.PI / 2, leftLegAngle + scrollAmount));
+                break;
+        }
+        drawScene(); // Ζωγράφισε ξανά τη σκηνή με τη νέα γωνία
+    });
+
+    // Ρύθμιση event listeners για τα radio buttons
+    document.querySelectorAll('input[name="robotPart"]').forEach((radio) => {
+        radio.addEventListener('change', (event) => {
+            selectRobotPart(event.target.value);
+        });
+    });
   }
   </script>
 </head>
@@ -223,6 +364,18 @@
   <button onclick="startAnimation()">Έναρξη animation</button>
   <button onclick="stopAnimation()">Παύση animation</button>
   <canvas id="sceneCanvas"></canvas>
+
+  <br><br>
+  <h3>Έλεγχος Μελών Ρομπότ:</h3>
+  <input type="radio" id="leftArm" name="robotPart" value="leftArm" onclick="selectRobotPart('leftArm')">
+  <label for="leftArm">Αριστερό χέρι</label><br>
+  <input type="radio" id="rightArm" name="robotPart" value="rightArm" onclick="selectRobotPart('rightArm')">
+  <label for="rightArm">Δεξί χέρι</label><br>
+  <input type="radio" id="head" name="robotPart" value="head" onclick="selectRobotPart('head')">
+  <label for="head">Κεφάλι</label><br>
+  <input type="radio" id="leftLeg" name="robotPart" value="leftLeg" onclick="selectRobotPart('leftLeg')">
+  <label for="leftLeg">Αριστερό πόδι</label><br>
+  <input type="radio" id="rightLeg" name="robotPart" value="rightLeg" onclick="selectRobotPart('rightLeg')">
+  <label for="rightLeg">Δεξί πόδι</label><br>
 </body>
 </html>
-
